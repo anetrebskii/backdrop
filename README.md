@@ -56,6 +56,7 @@ Every push to `main` builds the Release configuration, signs it with Developer I
 
 - `App/Pipeline.swift` reads the camera, runs `VNGeneratePersonSegmentationRequest`, and composites the person over the background with Core Image on the GPU at 1920x1080.
 - `App/VirtualCameraSink.swift` pushes finished frames into the camera extension's sink stream through CoreMediaIO.
+- Backdrop Camera offers 1080p and 720p. Backdrop works at the resolution the video app picks, and at 720p while only the panel preview is open. The person mask is recomputed on every third frame and reused in between.
 - `CameraExtension/` is a CoreMediaIO camera extension that forwards those frames to video apps, and shows a dark frame while Backdrop is not running.
 
 ## License

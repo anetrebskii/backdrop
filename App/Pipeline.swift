@@ -34,10 +34,13 @@ private struct RenderSettings {
     var softness = 1.0
     var blurStrength = 0.5
     var background: CIImage?
+    var size = Pipeline.size720
 }
 
 final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    static let outputSize = CGSize(width: 1920, height: 1080)
+    static let size1080 = CGSize(width: 1920, height: 1080)
+    static let size720 = CGSize(width: 1280, height: 720)
+    private var outputSize = Pipeline.size720
 
     @Published var cameras: [AVCaptureDevice] = []
     @Published var cameraID = "" { didSet { if cameraID != oldValue { configureSession() } } }
@@ -71,6 +74,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     private var sourceBackground: CIImage?
     private var backgroundImage: CIImage?
     private var outputPool: CVPixelBufferPool?
+    private var poolSize = CGSize.zero
     private var reconnectTimer: Timer?
     private var fixtureTimer: DispatchSourceTimer?
     private var started = false
@@ -91,14 +95,6 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         backgroundURL = defaults.string(forKey: "background").map { URL(fileURLWithPath: $0) }
         super.init()
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
-        let attrs: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: Int(Self.outputSize.width),
-            kCVPixelBufferHeightKey as String: Int(Self.outputSize.height),
-            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
-            kCVPixelBufferMetalCompatibilityKey as String: true,
-        ]
-        CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &outputPool)
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: videoQueue)
@@ -110,12 +106,13 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     func start() {
         guard !started else { return }
         started = true
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.connectVirtualCamera() }
-        connectVirtualCamera()
         if let fixture = ProcessInfo.processInfo.environment["BACKDROP_FIXTURE"] {
+            virtualCameraConnected = true
             startFixture(path: fixture)
             return
         }
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.connectVirtualCamera() }
+        connectVirtualCamera()
         AVCaptureDevice.requestAccess(for: .video) { granted in
             DispatchQueue.main.async {
                 if granted {
@@ -136,8 +133,10 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     func connectVirtualCamera() {
         sinkQueue.async {
             let connected = self.sink.connect()
-            let viewer = connected && self.sink.hasViewer()
+            let width = connected ? self.sink.viewerWidth() : 0
+            let viewer = width > 0
             DispatchQueue.main.async {
+                self.setOutputSize(width == Int(Self.size1080.width) ? Self.size1080 : Self.size720)
                 if self.virtualCameraConnected != connected { self.virtualCameraConnected = connected }
                 if #available(macOS 15.0, *), self.fixtureTimer == nil, self.systemBackgroundOn != AVCaptureDevice.isBackgroundReplacementEnabled {
                     self.systemBackgroundOn = AVCaptureDevice.isBackgroundReplacementEnabled
@@ -148,6 +147,23 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
                 }
             }
         }
+    }
+
+    private func setOutputSize(_ size: CGSize) {
+        guard size != outputSize else { return }
+        outputSize = size
+        blurBackground()
+        sessionQueue.async {
+            guard !self.session.inputs.isEmpty else { return }
+            self.session.beginConfiguration()
+            self.session.sessionPreset = self.preset(for: size)
+            self.session.commitConfiguration()
+        }
+    }
+
+    private func preset(for size: CGSize) -> AVCaptureSession.Preset {
+        let wanted: AVCaptureSession.Preset = size == Self.size1080 ? .hd1920x1080 : .hd1280x720
+        return session.canSetSessionPreset(wanted) ? wanted : .high
     }
 
     private func updateCapture() {
@@ -203,6 +219,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         let device = cameras.first { $0.uniqueID == cameraID }
         cameraState = device == nil ? .noCamera : .starting
         let want = wantsCapture
+        let size = outputSize
         sessionQueue.async {
             self.session.beginConfiguration()
             self.session.inputs.forEach { self.session.removeInput($0) }
@@ -210,7 +227,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
             var ok = false
             if let device, let input = try? AVCaptureDeviceInput(device: device), self.session.canAddInput(input) {
                 self.session.addInput(input)
-                self.session.sessionPreset = self.session.canSetSessionPreset(.hd1920x1080) ? .hd1920x1080 : .high
+                self.session.sessionPreset = self.preset(for: size)
                 ok = true
             }
             self.session.commitConfiguration()
@@ -222,21 +239,17 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     }
 
     private func loadBackground() {
-        var image: CIImage?
-        if let url = backgroundURL, let source = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) {
-            let rect = CGRect(origin: .zero, size: Self.outputSize)
-            image = source.transformed(by: Self.fillTransform(from: source.extent)).cropped(to: rect)
-        }
-        sourceBackground = image
+        sourceBackground = backgroundURL.flatMap { CIImage(contentsOf: $0, options: [.applyOrientationProperty: true]) }
         blurBackground()
     }
 
     private func blurBackground() {
-        let rect = CGRect(origin: .zero, size: Self.outputSize)
+        let rect = CGRect(origin: .zero, size: outputSize)
         backgroundImage = nil
-        if var image = sourceBackground {
+        if let source = sourceBackground {
+            var image = source.transformed(by: Self.fillTransform(from: source.extent, to: outputSize)).cropped(to: rect)
             if imageBlur > 0 {
-                image = image.clampedToExtent().applyingGaussianBlur(sigma: imageBlur * 40).cropped(to: rect)
+                image = image.clampedToExtent().applyingGaussianBlur(sigma: imageBlur * 40 * outputSize.width / 1920).cropped(to: rect)
             }
             var buffer: CVPixelBuffer?
             let attrs: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:], kCVPixelBufferMetalCompatibilityKey as String: true]
@@ -251,16 +264,16 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     }
 
     private func pushSettings() {
-        let next = RenderSettings(effectOn: effectOn, style: style, quality: quality, softness: softness, blurStrength: blurStrength, background: backgroundImage)
+        let next = RenderSettings(effectOn: effectOn, style: style, quality: quality, softness: softness, blurStrength: blurStrength, background: backgroundImage, size: outputSize)
         lock.lock()
         settings = next
         lock.unlock()
     }
 
-    private static func fillTransform(from extent: CGRect) -> CGAffineTransform {
-        let scale = max(outputSize.width / extent.width, outputSize.height / extent.height)
-        let tx = (outputSize.width - extent.width * scale) / 2 - extent.minX * scale
-        let ty = (outputSize.height - extent.height * scale) / 2 - extent.minY * scale
+    private static func fillTransform(from extent: CGRect, to size: CGSize) -> CGAffineTransform {
+        let scale = max(size.width / extent.width, size.height / extent.height)
+        let tx = (size.width - extent.width * scale) / 2 - extent.minX * scale
+        let ty = (size.height - extent.height * scale) / 2 - extent.minY * scale
         return CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: tx, ty: ty)
     }
 
@@ -270,22 +283,35 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     }
 
     private func process(_ pixelBuffer: CVPixelBuffer, time: CMTime) {
-        guard let outputPool else { return }
         lock.lock()
         let current = settings
         let wantPreview = previewWanted
         lock.unlock()
 
-        let rect = CGRect(origin: .zero, size: Self.outputSize)
+        if poolSize != current.size {
+            let attrs: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: Int(current.size.width),
+                kCVPixelBufferHeightKey as String: Int(current.size.height),
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+                kCVPixelBufferMetalCompatibilityKey as String: true,
+            ]
+            outputPool = nil
+            CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &outputPool)
+            poolSize = current.size
+        }
+        guard let outputPool else { return }
+        let scale = current.size.width / 1920
+        let rect = CGRect(origin: .zero, size: current.size)
         let source = CIImage(cvPixelBuffer: pixelBuffer)
-        let fill = Self.fillTransform(from: source.extent)
+        let fill = Self.fillTransform(from: source.extent, to: current.size)
         let frame = source.transformed(by: fill).cropped(to: rect)
         var result = frame
 
         if current.effectOn {
             request.qualityLevel = current.quality.level
             let began = CACurrentMediaTime()
-            if frames % 2 == 0 || lastMask == nil {
+            if frames % 3 == 0 || lastMask == nil {
                 try? sequenceHandler.perform([request], on: pixelBuffer)
                 lastMask = request.results?.first?.pixelBuffer
             }
@@ -302,13 +328,13 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
                     "inputBiasVector": CIVector(x: -0.3, y: -0.3, z: -0.3, w: 0),
                 ]).applyingFilter("CIColorClamp")
                 if current.softness > 0 {
-                    mask = mask.clampedToExtent().applyingGaussianBlur(sigma: current.softness).cropped(to: rect)
+                    mask = mask.clampedToExtent().applyingGaussianBlur(sigma: current.softness * scale).cropped(to: rect)
                 }
                 let background: CIImage
-                if current.style == .image, let image = current.background {
+                if current.style == .image, let image = current.background, image.extent.size == current.size {
                     background = image
                 } else {
-                    let sigma = 8 + current.blurStrength * 40
+                    let sigma = (8 + current.blurStrength * 40) * scale
                     background = frame
                         .applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: CIImage.clear.cropped(to: rect), kCIInputMaskImageKey: backgroundMask])
                         .clampedToExtent()
@@ -329,7 +355,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
 
         frames += 1
         if frames % 2 == 0, wantPreview {
-            let small = CIImage(cvPixelBuffer: outputBuffer).transformed(by: CGAffineTransform(scaleX: 1.0 / 3, y: 1.0 / 3))
+            let small = CIImage(cvPixelBuffer: outputBuffer).transformed(by: CGAffineTransform(scaleX: 640 / current.size.width, y: 640 / current.size.width))
             if let image = ciContext.createCGImage(small, from: small.extent) {
                 DispatchQueue.main.async {
                     self.preview = image

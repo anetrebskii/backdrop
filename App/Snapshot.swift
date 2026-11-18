@@ -57,9 +57,11 @@ enum Snapshot {
             }
             pipeline.quality = .accurate
 
+            pipeline.virtualCameraConnected = false
             model.installer.state = .needsApproval
             await shootPanel("panel-approval")
             model.installer.state = .idle
+            pipeline.virtualCameraConnected = true
 
             for tab in [SettingsTab.general, .effect, .camera] {
                 for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {

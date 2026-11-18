@@ -4,8 +4,7 @@ import Foundation
 import IOKit.audio
 import os.log
 
-let frameWidth: Int32 = 1920
-let frameHeight: Int32 = 1080
+let frameSizes: [(width: Int32, height: Int32)] = [(1920, 1080), (1280, 720)]
 let frameRate: Int32 = 30
 let viewerProperty = CMIOExtensionProperty(rawValue: "4cc_bdvw_glob_0000")
 private let log = Logger(subsystem: "com.anetrebskii.backdrop.camera", category: "extension")
@@ -14,13 +13,14 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
     private(set) var device: CMIOExtensionDevice!
     private var sourceStream: StreamSource!
     private var sinkStream: StreamSource!
-    private var formatDescription: CMFormatDescription!
-    private var pool: CVPixelBufferPool!
+    private var formatDescriptions: [CMFormatDescription] = []
+    private var pools: [CVPixelBufferPool] = []
     private let queue = DispatchQueue(label: "com.anetrebskii.backdrop.camera.frames", qos: .userInteractive)
     private var placeholderTimer: DispatchSourceTimer?
     private var sourceActive = false
     private let viewerLock = NSLock()
     private var hasViewer = false
+    private var viewerFormat = 0
     private var sinkActive = false
     private var sinkClient: CMIOExtensionClient?
     private var lastSinkFrame: UInt64 = 0
@@ -30,19 +30,25 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         super.init()
         device = CMIOExtensionDevice(localizedName: localizedName, deviceID: UUID(uuidString: "6E2A3C1B-8F4D-4B1E-9C7A-2D5F0B8E1A11")!, legacyDeviceID: nil, source: self)
 
-        CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: kCVPixelFormatType_32BGRA, width: frameWidth, height: frameHeight, extensions: nil, formatDescriptionOut: &formatDescription)
-        let attrs: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: frameWidth,
-            kCVPixelBufferHeightKey as String: frameHeight,
-            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
-        ]
-        CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &pool)
+        for size in frameSizes {
+            var description: CMFormatDescription?
+            CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: kCVPixelFormatType_32BGRA, width: size.width, height: size.height, extensions: nil, formatDescriptionOut: &description)
+            formatDescriptions.append(description!)
+            let attrs: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: size.width,
+                kCVPixelBufferHeightKey as String: size.height,
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+            ]
+            var pool: CVPixelBufferPool?
+            CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &pool)
+            pools.append(pool!)
+        }
 
         let duration = CMTime(value: 1, timescale: frameRate)
-        let format = CMIOExtensionStreamFormat(formatDescription: formatDescription, maxFrameDuration: duration, minFrameDuration: duration, validFrameDurations: nil)
-        sourceStream = StreamSource(localizedName: "Backdrop Camera.Video", streamID: UUID(uuidString: "6E2A3C1B-8F4D-4B1E-9C7A-2D5F0B8E1A12")!, format: format, direction: .source, owner: self)
-        sinkStream = StreamSource(localizedName: "Backdrop Camera.Sink", streamID: UUID(uuidString: "6E2A3C1B-8F4D-4B1E-9C7A-2D5F0B8E1A13")!, format: format, direction: .sink, owner: self)
+        let formats = formatDescriptions.map { CMIOExtensionStreamFormat(formatDescription: $0, maxFrameDuration: duration, minFrameDuration: duration, validFrameDurations: nil) }
+        sourceStream = StreamSource(localizedName: "Backdrop Camera.Video", streamID: UUID(uuidString: "6E2A3C1B-8F4D-4B1E-9C7A-2D5F0B8E1A12")!, formats: formats, direction: .source, owner: self)
+        sinkStream = StreamSource(localizedName: "Backdrop Camera.Sink", streamID: UUID(uuidString: "6E2A3C1B-8F4D-4B1E-9C7A-2D5F0B8E1A13")!, formats: formats, direction: .sink, owner: self)
         do {
             try device.addStream(sourceStream.stream)
             try device.addStream(sinkStream.stream)
@@ -59,7 +65,7 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         if properties.contains(.deviceModel) { props.model = "Backdrop Camera" }
         if properties.contains(viewerProperty) {
             viewerLock.lock()
-            let value = hasViewer ? "1" : "0"
+            let value = viewerValue
             viewerLock.unlock()
             props.setPropertyState(CMIOExtensionPropertyState(value: value as NSString), forProperty: viewerProperty)
         }
@@ -68,11 +74,24 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
 
     func setDeviceProperties(_ deviceProperties: CMIOExtensionDeviceProperties) throws {}
 
+    private var viewerValue: String {
+        hasViewer ? String(frameSizes[viewerFormat].width) : "0"
+    }
+
     private func setViewer(_ value: Bool) {
         viewerLock.lock()
         hasViewer = value
+        let state = viewerValue
         viewerLock.unlock()
-        device.notifyPropertiesChanged([viewerProperty: CMIOExtensionPropertyState<AnyObject>(value: (value ? "1" : "0") as NSString)])
+        device.notifyPropertiesChanged([viewerProperty: CMIOExtensionPropertyState<AnyObject>(value: state as NSString)])
+    }
+
+    func setSourceFormat(_ index: Int) {
+        viewerLock.lock()
+        viewerFormat = index
+        let active = hasViewer
+        viewerLock.unlock()
+        if active { setViewer(true) }
     }
 
     func startSource() {
@@ -117,9 +136,11 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
             guard let self else { return }
             self.queue.async {
                 if let buffer {
-                    self.lastSinkFrame = DispatchTime.now().uptimeNanoseconds
-                    if self.sourceActive {
-                        self.sourceStream.stream.send(buffer, discontinuity: [], hostTimeInNanoseconds: DispatchTime.now().uptimeNanoseconds)
+                    if self.matchesActiveFormat(buffer) {
+                        self.lastSinkFrame = DispatchTime.now().uptimeNanoseconds
+                        if self.sourceActive {
+                            self.sourceStream.stream.send(buffer, discontinuity: [], hostTimeInNanoseconds: DispatchTime.now().uptimeNanoseconds)
+                        }
                     }
                     let output = CMIOExtensionScheduledOutput(sequenceNumber: seq, hostTimeInNanoseconds: DispatchTime.now().uptimeNanoseconds)
                     self.sinkStream.stream.notifyScheduledOutputChanged(output)
@@ -133,21 +154,32 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         }
     }
 
+    private func matchesActiveFormat(_ buffer: CMSampleBuffer) -> Bool {
+        guard let format = CMSampleBufferGetFormatDescription(buffer) else { return false }
+        viewerLock.lock()
+        let index = viewerFormat
+        viewerLock.unlock()
+        return CMVideoFormatDescriptionGetDimensions(format).width == frameSizes[index].width
+    }
+
     private func sendPlaceholderIfIdle() {
         guard sourceActive else { return }
         let now = DispatchTime.now().uptimeNanoseconds
         guard now - lastSinkFrame > 500_000_000 else { return }
         var pixelBuffer: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &pixelBuffer) == kCVReturnSuccess, let pixelBuffer else { return }
+        viewerLock.lock()
+        let index = viewerFormat
+        viewerLock.unlock()
+        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pools[index], &pixelBuffer) == kCVReturnSuccess, let pixelBuffer else { return }
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         if let base = CVPixelBufferGetBaseAddress(pixelBuffer) {
-            memset(base, 0x22, CVPixelBufferGetBytesPerRow(pixelBuffer) * Int(frameHeight))
+            memset(base, 0x22, CVPixelBufferGetBytesPerRow(pixelBuffer) * CVPixelBufferGetHeight(pixelBuffer))
         }
         CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
 
         var sampleBuffer: CMSampleBuffer?
         var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: frameRate), presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), decodeTimeStamp: .invalid)
-        guard CMSampleBufferCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixelBuffer, dataReady: true, makeDataReadyCallback: nil, refcon: nil, formatDescription: formatDescription, sampleTiming: &timing, sampleBufferOut: &sampleBuffer) == noErr, let sampleBuffer else { return }
+        guard CMSampleBufferCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixelBuffer, dataReady: true, makeDataReadyCallback: nil, refcon: nil, formatDescription: formatDescriptions[index], sampleTiming: &timing, sampleBufferOut: &sampleBuffer) == noErr, let sampleBuffer else { return }
         sequence += 1
         sourceStream.stream.send(sampleBuffer, discontinuity: [], hostTimeInNanoseconds: now)
     }
@@ -155,20 +187,21 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
 
 final class StreamSource: NSObject, CMIOExtensionStreamSource {
     private(set) var stream: CMIOExtensionStream!
-    private let format: CMIOExtensionStreamFormat
+    let formats: [CMIOExtensionStreamFormat]
     private let direction: CMIOExtensionStream.Direction
     private weak var owner: DeviceSource?
 
-    init(localizedName: String, streamID: UUID, format: CMIOExtensionStreamFormat, direction: CMIOExtensionStream.Direction, owner: DeviceSource) {
-        self.format = format
+    init(localizedName: String, streamID: UUID, formats: [CMIOExtensionStreamFormat], direction: CMIOExtensionStream.Direction, owner: DeviceSource) {
+        self.formats = formats
         self.direction = direction
         self.owner = owner
         super.init()
         stream = CMIOExtensionStream(localizedName: localizedName, streamID: streamID, direction: direction, clockType: .hostTime, source: self)
     }
 
-    var formats: [CMIOExtensionStreamFormat] { [format] }
-    var activeFormatIndex: Int = 0
+    var activeFormatIndex: Int = 0 {
+        didSet { if direction == .source { owner?.setSourceFormat(activeFormatIndex) } }
+    }
 
     var availableProperties: Set<CMIOExtensionProperty> {
         var props: Set<CMIOExtensionProperty> = [.streamActiveFormatIndex, .streamFrameDuration]
@@ -180,7 +213,7 @@ final class StreamSource: NSObject, CMIOExtensionStreamSource {
 
     func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
         let props = CMIOExtensionStreamProperties(dictionary: [:])
-        if properties.contains(.streamActiveFormatIndex) { props.activeFormatIndex = 0 }
+        if properties.contains(.streamActiveFormatIndex) { props.activeFormatIndex = activeFormatIndex }
         if properties.contains(.streamFrameDuration) { props.frameDuration = CMTime(value: 1, timescale: frameRate) }
         if properties.contains(.streamSinkBufferQueueSize) { props.sinkBufferQueueSize = 1 }
         if properties.contains(.streamSinkBuffersRequiredForStartup) { props.sinkBuffersRequiredForStartup = 1 }
@@ -188,7 +221,7 @@ final class StreamSource: NSObject, CMIOExtensionStreamSource {
     }
 
     func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
-        if let index = streamProperties.activeFormatIndex { activeFormatIndex = index }
+        if let index = streamProperties.activeFormatIndex, formats.indices.contains(index) { activeFormatIndex = index }
     }
 
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {

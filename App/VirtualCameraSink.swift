@@ -35,16 +35,16 @@ final class VirtualCameraSink {
         return true
     }
 
-    func hasViewer() -> Bool {
-        guard let device = findDevice() else { return false }
+    func viewerWidth() -> Int {
+        guard let device = findDevice() else { return 0 }
         var address = CMIOObjectPropertyAddress(mSelector: CMIOObjectPropertySelector(0x62647677), mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal), mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain))
         var value: Unmanaged<CFString>?
         var used: UInt32 = 0
         let status = withUnsafeMutablePointer(to: &value) {
             CMIOObjectGetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<Unmanaged<CFString>?>.size), &used, $0)
         }
-        guard status == noErr, let value else { return false }
-        return (value.takeRetainedValue() as String) == "1"
+        guard status == noErr, let value else { return 0 }
+        return Int(value.takeRetainedValue() as String) ?? 0
     }
 
     func disconnect() {
