@@ -51,6 +51,10 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     @Published var stats = ""
     @Published var cameraState: CameraState = .starting
     @Published var virtualCameraConnected = false
+    @Published var panelVisible = false { didSet { updateCapture() } }
+    private var viewerActive = false
+    private var wantsCapture = false
+    private let sessionQueue = DispatchQueue(label: "com.anetrebskii.backdrop.session")
 
     private let defaults = UserDefaults.standard
     private let session = AVCaptureSession()
@@ -100,7 +104,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     func start() {
         guard !started else { return }
         started = true
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.connectVirtualCamera() }
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.connectVirtualCamera() }
         connectVirtualCamera()
         if let fixture = ProcessInfo.processInfo.environment["BACKDROP_FIXTURE"] {
             startFixture(path: fixture)
@@ -126,10 +130,29 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     func connectVirtualCamera() {
         sinkQueue.async {
             let connected = self.sink.connect()
+            let viewer = connected && self.sink.hasViewer()
             DispatchQueue.main.async {
                 if self.virtualCameraConnected != connected { self.virtualCameraConnected = connected }
+                if self.viewerActive != viewer {
+                    self.viewerActive = viewer
+                    self.updateCapture()
+                }
             }
         }
+    }
+
+    private func updateCapture() {
+        let want = panelVisible || viewerActive
+        guard want != wantsCapture, fixtureTimer == nil else { return }
+        wantsCapture = want
+        sessionQueue.async {
+            if want, !self.session.inputs.isEmpty, !self.session.isRunning {
+                self.session.startRunning()
+            } else if !want, self.session.isRunning {
+                self.session.stopRunning()
+            }
+        }
+        if !want { stats = "" }
     }
 
     func refreshCameras() {
@@ -170,7 +193,8 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         defaults.set(cameraID, forKey: "camera")
         let device = cameras.first { $0.uniqueID == cameraID }
         cameraState = device == nil ? .noCamera : .starting
-        videoQueue.async {
+        let want = wantsCapture
+        sessionQueue.async {
             self.session.beginConfiguration()
             self.session.inputs.forEach { self.session.removeInput($0) }
             if self.session.outputs.isEmpty, self.session.canAddOutput(self.output) { self.session.addOutput(self.output) }
@@ -181,7 +205,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
                 ok = true
             }
             self.session.commitConfiguration()
-            if ok, !self.session.isRunning { self.session.startRunning() }
+            if ok, want, !self.session.isRunning { self.session.startRunning() }
             if !ok {
                 DispatchQueue.main.async { self.cameraState = .noCamera }
             }

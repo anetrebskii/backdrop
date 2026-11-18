@@ -7,6 +7,7 @@ import os.log
 let frameWidth: Int32 = 1920
 let frameHeight: Int32 = 1080
 let frameRate: Int32 = 30
+let viewerProperty = CMIOExtensionProperty(rawValue: "4cc_bdvw_glob_0000")
 private let log = Logger(subsystem: "com.anetrebskii.backdrop.camera", category: "extension")
 
 final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
@@ -18,6 +19,8 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
     private let queue = DispatchQueue(label: "com.anetrebskii.backdrop.camera.frames", qos: .userInteractive)
     private var placeholderTimer: DispatchSourceTimer?
     private var sourceActive = false
+    private let viewerLock = NSLock()
+    private var hasViewer = false
     private var sinkActive = false
     private var sinkClient: CMIOExtensionClient?
     private var lastSinkFrame: UInt64 = 0
@@ -48,18 +51,32 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         }
     }
 
-    var availableProperties: Set<CMIOExtensionProperty> { [.deviceTransportType, .deviceModel] }
+    var availableProperties: Set<CMIOExtensionProperty> { [.deviceTransportType, .deviceModel, viewerProperty] }
 
     func deviceProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionDeviceProperties {
         let props = CMIOExtensionDeviceProperties(dictionary: [:])
         if properties.contains(.deviceTransportType) { props.transportType = kIOAudioDeviceTransportTypeVirtual }
         if properties.contains(.deviceModel) { props.model = "Backdrop Camera" }
+        if properties.contains(viewerProperty) {
+            viewerLock.lock()
+            let value = hasViewer ? "1" : "0"
+            viewerLock.unlock()
+            props.setPropertyState(CMIOExtensionPropertyState(value: value as NSString), forProperty: viewerProperty)
+        }
         return props
     }
 
     func setDeviceProperties(_ deviceProperties: CMIOExtensionDeviceProperties) throws {}
 
+    private func setViewer(_ value: Bool) {
+        viewerLock.lock()
+        hasViewer = value
+        viewerLock.unlock()
+        device.notifyPropertiesChanged([viewerProperty: CMIOExtensionPropertyState<AnyObject>(value: (value ? "1" : "0") as NSString)])
+    }
+
     func startSource() {
+        setViewer(true)
         queue.async {
             self.sourceActive = true
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
@@ -71,6 +88,7 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
     }
 
     func stopSource() {
+        setViewer(false)
         queue.async {
             self.sourceActive = false
             self.placeholderTimer?.cancel()

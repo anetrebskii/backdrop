@@ -14,8 +14,13 @@ final class VirtualCameraSink {
     func connect() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        if isConnected { return true }
-        guard let device = findDevice(), let stream = sinkStream(of: device) else { return false }
+        let found = findDevice()
+        if isConnected {
+            if found == deviceID { return true }
+            queue = nil
+            isConnected = false
+        }
+        guard let device = found, let stream = sinkStream(of: device) else { return false }
         var unmanagedQueue: Unmanaged<CMSimpleQueue>?
         let status = CMIOStreamCopyBufferQueue(stream, { _, _, _ in }, nil, &unmanagedQueue)
         guard status == noErr, let unmanagedQueue else { return false }
@@ -28,6 +33,18 @@ final class VirtualCameraSink {
         streamID = stream
         isConnected = true
         return true
+    }
+
+    func hasViewer() -> Bool {
+        guard let device = findDevice() else { return false }
+        var address = CMIOObjectPropertyAddress(mSelector: CMIOObjectPropertySelector(0x62647677), mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal), mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain))
+        var value: Unmanaged<CFString>?
+        var used: UInt32 = 0
+        let status = withUnsafeMutablePointer(to: &value) {
+            CMIOObjectGetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<Unmanaged<CFString>?>.size), &used, $0)
+        }
+        guard status == noErr, let value else { return false }
+        return (value.takeRetainedValue() as String) == "1"
     }
 
     func disconnect() {

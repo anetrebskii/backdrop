@@ -40,6 +40,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Backdrop
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.video
         NSCameraUsageDescription: Backdrop reads your camera to replace the background and publish it as Backdrop Camera.
@@ -66,6 +68,8 @@ targets:
       properties:
         CFBundlePackageType: SYSX
         CFBundleDisplayName: Backdrop Camera
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleName: Backdrop Camera
         NSSystemExtensionUsageDescription: Publishes Backdrop Camera to video apps.
         CMIOExtension:

@@ -76,6 +76,8 @@ struct PanelView: View {
         }
         .padding(14)
         .frame(width: 320)
+        .onAppear { pipeline.panelVisible = true }
+        .onDisappear { pipeline.panelVisible = false }
     }
 }
 
