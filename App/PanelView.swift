@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -19,6 +20,9 @@ struct PanelView: View {
                     .labelsHidden()
             }
             PreviewView(pipeline: pipeline)
+            if pipeline.systemBackgroundOn {
+                SystemEffectWarning()
+            }
             HStack {
                 Text("Camera")
                 Spacer()
@@ -105,8 +109,7 @@ struct PreviewView: View {
 
     var body: some View {
         Color.black.opacity(0.85)
-            .aspectRatio(16 / 9, contentMode: .fit)
-            .frame(maxWidth: .infinity)
+            .frame(width: 292, height: 292 * 9 / 16)
             .overlay {
                 if let image = pipeline.preview {
                     Image(decorative: image, scale: 1)
@@ -277,6 +280,28 @@ struct CameraStatusRow: View {
             ProgressView().controlSize(.small)
         } else {
             Button("Install", action: installer.install).buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+struct SystemEffectWarning: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("macOS Background is on")
+                    .font(.callout.weight(.medium))
+                Text("It replaces your background before Backdrop does. Turn off Background in Video Effects.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("Open") {
+                AVCaptureDevice.showSystemUserInterface(.videoEffects)
+            }
+            .controlSize(.small)
         }
     }
 }

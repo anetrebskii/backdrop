@@ -22,6 +22,7 @@ From top to bottom:
    - No camera: "No camera found. Connect your iPhone or a camera."
    - Permission denied: "Backdrop needs camera access." and button "Open Privacy Settings".
    - The overlay at bottom left shows frame rate and segmentation time when the effect is on.
+   - macOS Background warning: when the system Background video effect is on for Backdrop, a row under the preview shows a yellow warning icon, "macOS Background is on", "It replaces your background before Backdrop does. Turn off Background in Video Effects." and an "Open" button that opens the system Video Effects panel. It disappears within a second of the effect being turned off.
 3. Background row: label "Background" and a segmented control "Blur" / "Image".
 4. When Image is selected, a row of background thumbnails, 4 per row, then a "+" tile.
    - Clicking a thumbnail selects it; the selection has an accent ring and the preview changes on the next frame.

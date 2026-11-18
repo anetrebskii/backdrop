@@ -53,6 +53,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     @Published var cameraState: CameraState = .starting
     @Published var virtualCameraConnected = false
     @Published var panelVisible = false { didSet { updateCapture() } }
+    @Published var systemBackgroundOn = false
     private var viewerActive = false
     private var wantsCapture = false
     private let sessionQueue = DispatchQueue(label: "com.anetrebskii.backdrop.session")
@@ -136,6 +137,9 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
             let viewer = connected && self.sink.hasViewer()
             DispatchQueue.main.async {
                 if self.virtualCameraConnected != connected { self.virtualCameraConnected = connected }
+                if #available(macOS 15.0, *), self.fixtureTimer == nil, self.systemBackgroundOn != AVCaptureDevice.isBackgroundReplacementEnabled {
+                    self.systemBackgroundOn = AVCaptureDevice.isBackgroundReplacementEnabled
+                }
                 if self.viewerActive != viewer {
                     self.viewerActive = viewer
                     self.updateCapture()

@@ -45,6 +45,8 @@ enum Snapshot {
             await wait(1)
             pipeline.snapshotOutput(to: dir.appendingPathComponent("out-image-blur.png"))
             await shootPanel("panel-image-blur")
+            pipeline.systemBackgroundOn = true
+            await shootPanel("panel-system-background")
             pipeline.imageBlur = 0
 
             for quality in [SegmentationQuality.balanced, .fast] {
