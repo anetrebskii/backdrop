@@ -20,7 +20,7 @@ Requires macOS 14 or later.
 
 - **Replace background** switches the effect on or off.
 - **Camera** picks the camera Backdrop reads from.
-- **Background** is Blur or Image. Click a thumbnail to use it; **+** adds your own image; right-click removes one.
+- **Background** is Blur or Image. Click a thumbnail to use it; **+** adds your own image; right-click removes one; the **Blur** slider blurs the image.
 - **Settings** has the segmentation quality (Fast, Balanced, Accurate), edge softness, blur strength and Open at login.
 
 Behaviour and wording are specified in [docs/ux.md](docs/ux.md).

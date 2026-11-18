@@ -49,6 +49,15 @@ struct PanelView: View {
                 BackgroundGrid(pipeline: pipeline, library: library)
                     .disabled(!pipeline.effectOn)
                     .opacity(pipeline.effectOn ? 1 : 0.5)
+                if pipeline.backgroundURL != nil {
+                    HStack(spacing: 8) {
+                        Text("Blur")
+                        Slider(value: $pipeline.imageBlur, in: 0...1)
+                            .controlSize(.small)
+                    }
+                    .disabled(!pipeline.effectOn)
+                    .foregroundStyle(pipeline.effectOn ? .primary : .secondary)
+                }
             }
             Divider()
             CameraStatusRow(pipeline: pipeline, installer: installer)

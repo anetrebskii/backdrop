@@ -47,6 +47,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     @Published var softness: Double { didSet { defaults.set(softness, forKey: "softness"); pushSettings() } }
     @Published var blurStrength: Double { didSet { defaults.set(blurStrength, forKey: "blurStrength"); pushSettings() } }
     @Published var backgroundURL: URL? { didSet { defaults.set(backgroundURL?.path, forKey: "background"); loadBackground() } }
+    @Published var imageBlur: Double { didSet { defaults.set(imageBlur, forKey: "imageBlur"); blurBackground() } }
     @Published var preview: CGImage?
     @Published var stats = ""
     @Published var cameraState: CameraState = .starting
@@ -66,6 +67,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     private let sink = VirtualCameraSink()
     private let lock = NSLock()
     private var settings = RenderSettings()
+    private var sourceBackground: CIImage?
     private var backgroundImage: CIImage?
     private var outputPool: CVPixelBufferPool?
     private var reconnectTimer: Timer?
@@ -82,6 +84,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         quality = SegmentationQuality(rawValue: defaults.string(forKey: "quality") ?? "") ?? .accurate
         softness = defaults.object(forKey: "softness") as? Double ?? 1.0
         blurStrength = defaults.object(forKey: "blurStrength") as? Double ?? 0.5
+        imageBlur = defaults.object(forKey: "imageBlur") as? Double ?? 0
         backgroundURL = defaults.string(forKey: "background").map { URL(fileURLWithPath: $0) }
         super.init()
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
@@ -218,7 +221,17 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
             let rect = CGRect(origin: .zero, size: Self.outputSize)
             image = source.transformed(by: Self.fillTransform(from: source.extent)).cropped(to: rect)
         }
-        backgroundImage = image
+        sourceBackground = image
+        blurBackground()
+    }
+
+    private func blurBackground() {
+        let rect = CGRect(origin: .zero, size: Self.outputSize)
+        if let image = sourceBackground, imageBlur > 0, let cg = ciContext.createCGImage(image.clampedToExtent().applyingGaussianBlur(sigma: imageBlur * 40).cropped(to: rect), from: rect) {
+            backgroundImage = CIImage(cgImage: cg)
+        } else {
+            backgroundImage = sourceBackground
+        }
         pushSettings()
     }
 

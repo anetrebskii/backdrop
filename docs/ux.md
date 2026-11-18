@@ -28,6 +28,7 @@ From top to bottom:
    - "+" opens a file panel for images; the chosen file is copied into Backdrop's library and selected.
    - Right-click a thumbnail: "Remove". The file goes to the Trash, so it can be restored.
    - Empty library: only the "+" tile, with the caption "Add a background image".
+   - When an image is selected, a "Blur" slider under the thumbnails blurs it, from sharp (default) to strongly blurred. The preview updates while dragging.
 5. Footer: status of Backdrop Camera, and the gear and Quit buttons.
    - Installed: green dot, "Backdrop Camera is ready" and "Choose it as the camera in your video app."
    - Not installed: grey dot, "Backdrop Camera is not installed" and an "Install" button.
@@ -43,7 +44,7 @@ Standard macOS Settings with three tabs.
 
 ## Persistence
 
-All choices persist across launches: switch, style, selected image, camera, quality, softness and blur strength.
+All choices persist across launches: switch, style, selected image, image blur, camera, quality, softness and blur strength.
 
 ## Permissions
 

@@ -41,6 +41,11 @@ enum Snapshot {
             log.append("image accurate: \(pipeline.stats)")
             log.append("library: \(model.library.items.map(\.url.lastPathComponent)) selected: \(pipeline.backgroundURL?.lastPathComponent ?? "none")")
             await shootPanel("panel-image")
+            pipeline.imageBlur = 0.5
+            await wait(1)
+            pipeline.snapshotOutput(to: dir.appendingPathComponent("out-image-blur.png"))
+            await shootPanel("panel-image-blur")
+            pipeline.imageBlur = 0
 
             for quality in [SegmentationQuality.balanced, .fast] {
                 pipeline.quality = quality
