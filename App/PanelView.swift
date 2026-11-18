@@ -104,28 +104,31 @@ struct PreviewView: View {
     @ObservedObject var pipeline: Pipeline
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.85))
-            if let image = pipeline.preview {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                placeholder.frame(maxWidth: .infinity, maxHeight: .infinity)
+        Color.black.opacity(0.85)
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if let image = pipeline.preview {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    placeholder
+                }
             }
-            if pipeline.preview != nil, !pipeline.stats.isEmpty {
-                Text(pipeline.stats)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.black.opacity(0.55), in: Capsule())
-                    .padding(6)
+            .overlay(alignment: .bottomLeading) {
+                if pipeline.preview != nil, !pipeline.stats.isEmpty {
+                    Text(pipeline.stats)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.55), in: Capsule())
+                        .padding(6)
+                }
             }
-        }
-        .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .accessibilityLabel("Preview of Backdrop Camera")
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityLabel("Preview of Backdrop Camera")
     }
 
     @ViewBuilder private var placeholder: some View {
