@@ -233,10 +233,19 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
 
     private func blurBackground() {
         let rect = CGRect(origin: .zero, size: Self.outputSize)
-        if let image = sourceBackground, imageBlur > 0, let cg = ciContext.createCGImage(image.clampedToExtent().applyingGaussianBlur(sigma: imageBlur * 40).cropped(to: rect), from: rect) {
-            backgroundImage = CIImage(cgImage: cg)
-        } else {
-            backgroundImage = sourceBackground
+        backgroundImage = nil
+        if var image = sourceBackground {
+            if imageBlur > 0 {
+                image = image.clampedToExtent().applyingGaussianBlur(sigma: imageBlur * 40).cropped(to: rect)
+            }
+            var buffer: CVPixelBuffer?
+            let attrs: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:], kCVPixelBufferMetalCompatibilityKey as String: true]
+            CVPixelBufferCreate(kCFAllocatorDefault, Int(rect.width), Int(rect.height), kCVPixelFormatType_32BGRA, attrs as CFDictionary, &buffer)
+            if let buffer {
+                let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+                ciContext.render(image, to: buffer, bounds: rect, colorSpace: sRGB)
+                backgroundImage = CIImage(cvPixelBuffer: buffer, options: [.colorSpace: sRGB])
+            }
         }
         pushSettings()
     }
