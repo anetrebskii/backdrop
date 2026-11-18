@@ -1,0 +1,72 @@
+name: Backdrop
+options:
+  bundleIdPrefix: com.anetrebskii
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: MQKD7Z7V2L
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "6"
+targets:
+  Backdrop:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+        excludes: [AppIcon.icon]
+      - path: App/AppIcon.icon
+        type: file
+        buildPhase: resources
+    dependencies:
+      - target: CameraExtension
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.anetrebskii.backdrop
+        CODE_SIGN_ENTITLEMENTS: App/Backdrop.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Developer ID Application
+          PROVISIONING_PROFILE_SPECIFIER: Backdrop Developer ID
+          OTHER_CODE_SIGN_FLAGS: --timestamp
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Backdrop
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.video
+        NSCameraUsageDescription: Backdrop reads your camera to replace the background and publish it as Backdrop Camera.
+        NSCameraUseContinuityCameraDeviceType: true
+  CameraExtension:
+    type: system-extension
+    platform: macOS
+    sources: [CameraExtension]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.anetrebskii.backdrop.camera
+        PRODUCT_NAME: com.anetrebskii.backdrop.camera
+        CODE_SIGN_ENTITLEMENTS: CameraExtension/CameraExtension.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Developer ID Application
+          OTHER_CODE_SIGN_FLAGS: --timestamp
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+    info:
+      path: CameraExtension/Info.plist
+      properties:
+        CFBundlePackageType: SYSX
+        CFBundleDisplayName: Backdrop Camera
+        CFBundleName: Backdrop Camera
+        NSSystemExtensionUsageDescription: Publishes Backdrop Camera to video apps.
+        CMIOExtension:
+          CMIOExtensionMachServiceName: $(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)

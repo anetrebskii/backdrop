@@ -1,0 +1,5 @@
+build/
+DerivedData/
+Backdrop.xcodeproj/
+*.xcarchive
+.DS_Store
