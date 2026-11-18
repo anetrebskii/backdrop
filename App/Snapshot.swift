@@ -17,6 +17,7 @@ enum Snapshot {
             }
 
             await wait(3)
+            pipeline.panelVisible = true
             pipeline.effectOn = false
             await wait(1)
             pipeline.snapshotOutput(to: dir.appendingPathComponent("out-off.png"))

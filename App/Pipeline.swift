@@ -52,7 +52,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     @Published var stats = ""
     @Published var cameraState: CameraState = .starting
     @Published var virtualCameraConnected = false
-    @Published var panelVisible = false { didSet { updateCapture() } }
+    @Published var panelVisible = false { didSet { lock.lock(); previewWanted = panelVisible; lock.unlock(); updateCapture() } }
     @Published var systemBackgroundOn = false
     private var viewerActive = false
     private var wantsCapture = false
@@ -76,6 +76,8 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     private var started = false
     private var frames = 0
     private var segmentationTime = 0.0
+    private var lastMask: CVPixelBuffer?
+    private var previewWanted = false
     private var statsStart = CACurrentMediaTime()
     private(set) var lastOutput: CVPixelBuffer?
 
@@ -262,6 +264,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         guard let outputPool else { return }
         lock.lock()
         let current = settings
+        let wantPreview = previewWanted
         lock.unlock()
 
         let rect = CGRect(origin: .zero, size: Self.outputSize)
@@ -273,9 +276,12 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         if current.effectOn {
             request.qualityLevel = current.quality.level
             let began = CACurrentMediaTime()
-            try? sequenceHandler.perform([request], on: pixelBuffer)
+            if frames % 2 == 0 || lastMask == nil {
+                try? sequenceHandler.perform([request], on: pixelBuffer)
+                lastMask = request.results?.first?.pixelBuffer
+            }
             segmentationTime += CACurrentMediaTime() - began
-            if let maskBuffer = request.results?.first?.pixelBuffer {
+            if let maskBuffer = lastMask {
                 let rawMask = CIImage(cvPixelBuffer: maskBuffer)
                 let toSource = CGAffineTransform(scaleX: source.extent.width / rawMask.extent.width, y: source.extent.height / rawMask.extent.height)
                 var mask = rawMask.transformed(by: toSource.concatenating(fill)).cropped(to: rect)
@@ -313,7 +319,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         lastOutput = outputBuffer
 
         frames += 1
-        if frames % 2 == 0 {
+        if frames % 2 == 0, wantPreview {
             let small = CIImage(cvPixelBuffer: outputBuffer).transformed(by: CGAffineTransform(scaleX: 1.0 / 3, y: 1.0 / 3))
             if let image = ciContext.createCGImage(small, from: small.extent) {
                 DispatchQueue.main.async {
