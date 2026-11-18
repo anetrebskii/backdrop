@@ -40,12 +40,12 @@ From top to bottom:
 Standard macOS Settings with three tabs.
 
 - General: Camera picker; "Open at login" switch.
-- Effect: Quality (Fast, Balanced, Accurate; default Accurate) with the caption "Accurate gives the cleanest hair and edges and uses the most power."; Edge softness slider (Sharp to Soft); Blur strength slider (Light to Strong).
+- Effect: Quality (Fast, Balanced, Accurate; default Accurate) with the caption "Accurate gives the cleanest hair and edges and uses the most power."; Frame rate (15, 24, 30 fps; default 30) with the caption "A lower frame rate uses less power. Motion looks less smooth."; Update edges (Every frame, Every 2nd, Every 3rd; default Every frame) with the caption "Updating less often uses less power. Edges can lag behind when you move quickly."; Edge softness slider (Sharp to Soft); Blur strength slider (Light to Strong).
 - Camera: Backdrop Camera status, Install or Uninstall. Uninstall asks for confirmation: "Uninstall Backdrop Camera? Video apps using it will lose the picture." with the buttons "Uninstall" (destructive) and "Cancel" (default).
 
 ## Persistence
 
-All choices persist across launches: switch, style, selected image, image blur, camera, quality, softness and blur strength.
+All choices persist across launches: switch, style, selected image, image blur, camera, quality, frame rate, edge update rate, softness and blur strength.
 
 ## Permissions
 

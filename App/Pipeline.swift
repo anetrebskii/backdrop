@@ -35,6 +35,7 @@ private struct RenderSettings {
     var blurStrength = 0.5
     var background: CIImage?
     var size = Pipeline.size720
+    var maskInterval = 1
 }
 
 final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
@@ -50,6 +51,8 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     @Published var softness: Double { didSet { defaults.set(softness, forKey: "softness"); pushSettings() } }
     @Published var blurStrength: Double { didSet { defaults.set(blurStrength, forKey: "blurStrength"); pushSettings() } }
     @Published var backgroundURL: URL? { didSet { defaults.set(backgroundURL?.path, forKey: "background"); loadBackground() } }
+    @Published var frameRate: Int { didSet { defaults.set(frameRate, forKey: "frameRate"); lock.lock(); frameInterval = 1 / Double(frameRate); lock.unlock() } }
+    @Published var maskInterval: Int { didSet { defaults.set(maskInterval, forKey: "maskInterval"); pushSettings() } }
     @Published var imageBlur: Double { didSet { defaults.set(imageBlur, forKey: "imageBlur"); blurBackground() } }
     @Published var preview: CGImage?
     @Published var stats = ""
@@ -82,6 +85,8 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     private var segmentationTime = 0.0
     private var lastMask: CVPixelBuffer?
     private var previewWanted = false
+    private var frameInterval = 1.0 / 30
+    private var nextFrameTime = 0.0
     private var statsStart = CACurrentMediaTime()
     private(set) var lastOutput: CVPixelBuffer?
 
@@ -92,6 +97,10 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         softness = defaults.object(forKey: "softness") as? Double ?? 1.0
         blurStrength = defaults.object(forKey: "blurStrength") as? Double ?? 0.5
         imageBlur = defaults.object(forKey: "imageBlur") as? Double ?? 0
+        maskInterval = defaults.object(forKey: "maskInterval") as? Int ?? 1
+        let rate = defaults.object(forKey: "frameRate") as? Int ?? 30
+        frameRate = rate
+        frameInterval = 1 / Double(rate)
         backgroundURL = defaults.string(forKey: "background").map { URL(fileURLWithPath: $0) }
         super.init()
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
@@ -264,7 +273,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
     }
 
     private func pushSettings() {
-        let next = RenderSettings(effectOn: effectOn, style: style, quality: quality, softness: softness, blurStrength: blurStrength, background: backgroundImage, size: outputSize)
+        let next = RenderSettings(effectOn: effectOn, style: style, quality: quality, softness: softness, blurStrength: blurStrength, background: backgroundImage, size: outputSize, maskInterval: maskInterval)
         lock.lock()
         settings = next
         lock.unlock()
@@ -279,7 +288,14 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        process(pixelBuffer, time: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let seconds = time.seconds
+        lock.lock()
+        let interval = frameInterval
+        lock.unlock()
+        if seconds + 0.008 < nextFrameTime { return }
+        nextFrameTime = max(nextFrameTime + interval, seconds)
+        process(pixelBuffer, time: time)
     }
 
     private func process(_ pixelBuffer: CVPixelBuffer, time: CMTime) {
@@ -311,7 +327,7 @@ final class Pipeline: NSObject, ObservableObject, AVCaptureVideoDataOutputSample
         if current.effectOn {
             request.qualityLevel = current.quality.level
             let began = CACurrentMediaTime()
-            if frames % 3 == 0 || lastMask == nil {
+            if frames % current.maskInterval == 0 || lastMask == nil {
                 try? sequenceHandler.perform([request], on: pixelBuffer)
                 lastMask = request.results?.first?.pixelBuffer
             }

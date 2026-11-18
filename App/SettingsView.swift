@@ -86,6 +86,30 @@ struct EffectSettings: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Picker("Frame rate", selection: $pipeline.frameRate) {
+                    Text("15 fps").tag(15)
+                    Text("24 fps").tag(24)
+                    Text("30 fps").tag(30)
+                }
+                .pickerStyle(.segmented)
+            } footer: {
+                Text("A lower frame rate uses less power. Motion looks less smooth.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Picker("Update edges", selection: $pipeline.maskInterval) {
+                    Text("Every frame").tag(1)
+                    Text("Every 2nd").tag(2)
+                    Text("Every 3rd").tag(3)
+                }
+                .pickerStyle(.segmented)
+            } footer: {
+                Text("Updating less often uses less power. Edges can lag behind when you move quickly.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Slider(value: $pipeline.softness, in: 0...4) {
                     Text("Edge softness")
                 } minimumValueLabel: {

@@ -21,7 +21,7 @@ Requires macOS 14 or later.
 - **Replace background** switches the effect on or off.
 - **Camera** picks the camera Backdrop reads from.
 - **Background** is Blur or Image. Click a thumbnail to use it; **+** adds your own image; right-click removes one; the **Blur** slider blurs the image.
-- **Settings** has the segmentation quality (Fast, Balanced, Accurate), edge softness, blur strength and Open at login.
+- **Settings** has the segmentation quality (Fast, Balanced, Accurate), frame rate (15, 24 or 30 fps), how often edges update, edge softness, blur strength and Open at login.
 
 Behaviour and wording are specified in [docs/ux.md](docs/ux.md).
 
@@ -56,7 +56,7 @@ Every push to `main` builds the Release configuration, signs it with Developer I
 
 - `App/Pipeline.swift` reads the camera, runs `VNGeneratePersonSegmentationRequest`, and composites the person over the background with Core Image on the GPU at 1920x1080.
 - `App/VirtualCameraSink.swift` pushes finished frames into the camera extension's sink stream through CoreMediaIO.
-- Backdrop Camera offers 1080p and 720p. Backdrop works at the resolution the video app picks, and at 720p while only the panel preview is open. The person mask is recomputed on every third frame and reused in between.
+- Backdrop Camera offers 1080p and 720p. Backdrop works at the resolution the video app picks, and at 720p while only the panel preview is open. The person mask is recomputed on every frame, every second or every third frame (Settings > Effect > Update edges, default every frame) and reused in between.
 - `CameraExtension/` is a CoreMediaIO camera extension that forwards those frames to video apps, and shows a dark frame while Backdrop is not running.
 
 ## License
